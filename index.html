@@ -347,6 +347,16 @@ function getCycle(){
   return{cs:cs,ce:ce,payDay:payDay,label:label,key:key,total:total,elapsed:elapsed,left:left,timePct:pct(elapsed,total)};
 }
 
+function getCycleKeyForDate(dateStr){
+  var d=new Date(dateStr+'T00:00:00'),day=d.getDate(),yr,mo;
+  if(day>=10&&day<25){
+    return d.getFullYear()+'-'+(d.getMonth()+1)+'-A';
+  }else{
+    if(day>=25){yr=d.getFullYear();mo=d.getMonth()+1;}
+    else{if(d.getMonth()===0){yr=d.getFullYear()-1;mo=12;}else{yr=d.getFullYear();mo=d.getMonth();}}
+    return yr+'-'+mo+'-B';
+  }
+}
 function cyclePayoffs(key){return(D.payoffs||[]).filter(function(p){return p.cycleKey===key;});}
 function allCycles(){
   var map={};
@@ -427,9 +437,8 @@ function savePayoff(){
   var date=document.getElementById('p-date').value;
   var note=document.getElementById('p-note').value.trim();
   if(!amt||isNaN(amt))return;
-  var ci=getCycle();
   if(!D.payoffs)D.payoffs=[];
-  D.payoffs.push({id:uid(),amt:amt,date:date,note:note,cycleKey:ci.key,budget:D.ccBudget});
+  D.payoffs.push({id:uid(),amt:amt,date:date,note:note,cycleKey:getCycleKeyForDate(date),budget:D.ccBudget});
   D.payoffs.sort(function(a,b){return b.date.localeCompare(a.date);});
   D.ccBalance=Math.max(0,(D.ccBalance||0)-amt);
   save();closeModal('payoff-modal');render(tab);toast('Payoff logged! 💳','#00c896');
@@ -695,7 +704,7 @@ function renderCC(){
   var cycles=allCycles();
   var allTime=cycles.reduce(function(s,c){return s+c.total;},0);
 
-  function cycleLabel(key){var p=key.split('-');var mo=new Date(parseInt(p[0]),parseInt(p[1])-1,1).toLocaleDateString('en-US',{month:'short',year:'2-digit'});return mo+' '+(p[2]==='A'?'10–25':'25–10');}
+  function cycleLabel(key){var p=key.split('-');var yr=parseInt(p[0]),mo=parseInt(p[1]),ab=p[2];var d=ab==='A'?new Date(yr,mo-1,10):new Date(yr,mo-1,25);return d.toLocaleDateString('en-US',{month:'short',year:'numeric'})+' '+(ab==='A'?'10–25':'25–10');}
 
   var histHTML=cycles.length===0
     ?'<div style="text-align:center;color:var(--text3);padding:30px;font-size:13px">No payoffs logged yet</div>'
@@ -869,6 +878,15 @@ function setupHeader(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 D=load();
+// Seed historical payoff data if this is a fresh install
+if(!D.payoffs||D.payoffs.length===0){
+  var seed={"weekly": 1500, "ccBudget": 1000, "rent": 1970.51, "ccBalance": 0, "ccLastUpdated": null, "payoffs": [{"id": 1700000000000, "amt": 571.02, "date": "2026-04-11", "note": "Full", "cycleKey": "2026-4-A", "budget": 1000}, {"id": 1700000001000, "amt": 300.0, "date": "2026-04-05", "note": "Partial", "cycleKey": "2026-3-B", "budget": 1000}, {"id": 1700000002000, "amt": 204.37, "date": "2026-03-25", "note": "Full", "cycleKey": "2026-3-B", "budget": 1000}, {"id": 1700000003000, "amt": 488.29, "date": "2026-03-23", "note": "", "cycleKey": "2026-3-A", "budget": 1000}, {"id": 1700000004000, "amt": 273.76, "date": "2026-03-04", "note": "", "cycleKey": "2026-2-B", "budget": 1000}, {"id": 1700000005000, "amt": 1076.61, "date": "2026-02-19", "note": "Full", "cycleKey": "2026-2-A", "budget": 1000}, {"id": 1700000006000, "amt": 359.92, "date": "2026-02-17", "note": "Full", "cycleKey": "2026-2-A", "budget": 1000}, {"id": 1700000007000, "amt": 200.0, "date": "2026-01-30", "note": "Full", "cycleKey": "2026-1-B", "budget": 1000}, {"id": 1700000008000, "amt": 290.18, "date": "2026-01-20", "note": "Full", "cycleKey": "2026-1-A", "budget": 1000}, {"id": 1700000009000, "amt": 591.21, "date": "2026-01-14", "note": "Full", "cycleKey": "2026-1-A", "budget": 1000}, {"id": 1700000010000, "amt": 442.73, "date": "2026-01-02", "note": "Full", "cycleKey": "2025-12-B", "budget": 1000}, {"id": 1700000011000, "amt": 250.0, "date": "2025-12-29", "note": "Partial", "cycleKey": "2025-12-B", "budget": 1000}], "balanceLog": [], "accounts": [], "bills": [], "goals": []};
+  D.payoffs=seed.payoffs;
+  D.weekly=seed.weekly;
+  D.ccBudget=seed.ccBudget;
+  D.rent=seed.rent;
+  save();
+}
 var mf={name:'CashFlow',short_name:'CashFlow',start_url:'/',display:'standalone',background_color:'#f7f8fa',theme_color:'#f7f8fa'};
 var bl=new Blob([JSON.stringify(mf)],{type:'application/json'});
 var lk=document.createElement('link');lk.rel='manifest';lk.href=URL.createObjectURL(bl);
