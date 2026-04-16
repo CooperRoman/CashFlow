@@ -138,14 +138,17 @@ button:active{opacity:.85;transform:scale(.98)}
 <div id="screen-home"    class="screen on"></div>
 <div id="screen-cc"      class="screen"></div>
 <div id="screen-accounts"class="screen"></div>
-<div id="screen-goals"   class="screen"></div>
+<div id="screen-goals"     class="screen"></div>
+<div id="screen-portfolio" class="screen"></div>
+<div id="screen-health"    class="screen"></div>
 
 <!-- NAV -->
 <div id="nav">
   <button class="nb on" onclick="goTab('home',this)"><span class="nb-i">◈</span><span class="nb-l">Budget</span></button>
   <button class="nb"    onclick="goTab('cc',this)"><span class="nb-i">💳</span><span class="nb-l">Card</span></button>
-  <button class="nb"    onclick="goTab('accounts',this)"><span class="nb-i">🏦</span><span class="nb-l">Accounts</span></button>
-  <button class="nb"    onclick="goTab('goals',this)"><span class="nb-i">◎</span><span class="nb-l">Goals</span></button>
+  <button class="nb"    onclick="goTab('accounts',this)"><span class="nb-i">🏦</span><span class="nb-l">Worth</span></button>
+  <button class="nb"    onclick="goTab('portfolio',this)"><span class="nb-i">📈</span><span class="nb-l">Portfolio</span></button>
+  <button class="nb"    onclick="goTab('health',this)"><span class="nb-i">🎯</span><span class="nb-l">Health</span></button>
 </div>
 
 <!-- ═══════════ MODALS ═══════════ -->
@@ -268,7 +271,44 @@ button:active{opacity:.85;transform:scale(.98)}
   </div>
 </div>
 
-<!-- ADD TO GOAL -->
+<!-- ADD HOLDING -->
+<div id="holding-modal" class="modal-bg" onclick="if(event.target===this)closeModal('holding-modal')">
+  <div class="modal">
+    <div class="mh"></div>
+    <div class="modal-title" id="hm-title">Add Holding</div>
+    <div class="modal-sub">Stocks, ETFs, crypto, or any investment</div>
+    <div class="form-group">
+      <div class="fg"><span class="lbl">Ticker / Name</span><input id="h-ticker" placeholder="e.g. SPY, NVDA, BTC…" style="text-transform:uppercase"/></div>
+      <div class="fg"><span class="lbl">Type</span>
+        <select id="h-type">
+          <option value="stock">📊 Stock</option>
+          <option value="etf">📦 ETF / Index Fund</option>
+          <option value="crypto">₿ Crypto</option>
+          <option value="other">📋 Other</option>
+        </select>
+      </div>
+      <div class="fg"><span class="lbl">Current Market Value ($)</span><input id="h-value" type="number" placeholder="0.00"/></div>
+      <div class="fg"><span class="lbl">Total Cost Basis ($)</span><input id="h-cost" type="number" placeholder="What you paid"/></div>
+      <div class="fg"><span class="lbl">Note (optional)</span><input id="h-note" placeholder="e.g. Robinhood, long-term hold…"/></div>
+      <button class="btn-primary" id="hm-save-btn" onclick="saveHolding()">+ Add Holding</button>
+    </div>
+  </div>
+</div>
+
+<!-- UPDATE HOLDING VALUE -->
+<div id="holding-update-modal" class="modal-bg" onclick="if(event.target===this)closeModal('holding-update-modal')">
+  <div class="modal">
+    <div class="mh"></div>
+    <div class="modal-title" id="hum-title">Update Value</div>
+    <div class="modal-sub">Enter the current market value</div>
+    <div class="form-group">
+      <div class="fg"><span class="lbl">Current Market Value</span><input id="hu-value" type="number" placeholder="0.00"/></div>
+      <button class="btn-primary" onclick="updateHoldingValue()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD GOAL -->
 <div id="gadd-modal" class="modal-bg" onclick="if(event.target===this)closeModal('gadd-modal')">
   <div class="modal">
     <div class="mh"></div>
@@ -286,13 +326,18 @@ button:active{opacity:.85;transform:scale(.98)}
 <script>
 // ── Storage ───────────────────────────────────────────────────────────────────
 var SK='cashflow_v4';
-var D=null,goalAddId=null,acctEditId=null,acctUpdateId=null;
+var D=null,goalAddId=null,acctEditId=null,acctUpdateId=null,holdingEditId=null,holdingUpdateId=null;
 
 function def(){return{
   weekly:1500,ccBudget:1000,rent:1970.51,
   ccBalance:0,ccLastUpdated:null,
   payoffs:[],balanceLog:[],
-  accounts:[],bills:[],goals:[]
+  accounts:[
+    {id:9001,type:'checking', name:'Checking ****06864', bal:1556,  updated:'2026-04-15'},
+    {id:9002,type:'savings',  name:'Savings ****85167',  bal:3997,  updated:'2026-04-15'},
+    {id:9003,type:'investment',name:'Robinhood',          bal:2217,  updated:'2026-04-15'},
+    {id:9004,type:'investment',name:'Bitcoin (Coinbase)', bal:2543,  updated:'2026-04-15'}
+  ],bills:[],goals:[],holdings:[]
 };}
 function load(){try{var r=localStorage.getItem(SK);if(r)return JSON.parse(r);}catch{}return def();}
 function save(){try{localStorage.setItem(SK,JSON.stringify(D));}catch{}}
@@ -323,6 +368,8 @@ function render(id){
   if(id==='cc')renderCC();
   if(id==='accounts')renderAccounts();
   if(id==='goals')renderGoals();
+  if(id==='portfolio')renderPortfolio();
+  if(id==='health')renderHealth();
 }
 
 // ── Cycle logic ───────────────────────────────────────────────────────────────
@@ -876,6 +923,368 @@ function setupHeader(){
   document.getElementById('hdr-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}).toUpperCase();
 }
 
+
+// ── HOLDINGS / PORTFOLIO ──────────────────────────────────────────────────────
+var HOLDING_COLORS={stock:'#3b82f6',etf:'#00c896',crypto:'#f59e0b',other:'#8b5cf6'};
+var HOLDING_ICONS={stock:'📊',etf:'📦',crypto:'₿',other:'📋'};
+
+// Pre-seed Coopers actual accounts
+function seedAccounts(){
+  if(D.accounts&&D.accounts.length>0)return;
+  D.accounts=[
+    {id:9001,type:'checking', name:'Checking ****06864', bal:1556,  updated:'2026-04-15'},
+    {id:9002,type:'savings',  name:'Savings ****85167',  bal:3997,  updated:'2026-04-15'},
+    {id:9003,type:'investment',name:'Robinhood',          bal:2217,  updated:'2026-04-15'},
+    {id:9004,type:'investment',name:'Bitcoin (Coinbase)', bal:2543,  updated:'2026-04-15'}
+  ];
+  save();
+}
+
+// Pre-seed Coopers actual portfolio
+function seedPortfolio(){
+  if(D.holdings&&D.holdings.length>0)return;
+  D.holdings=[
+    {id:uid(),ticker:'SPY', name:'S&P 500 ETF',   type:'etf',    value:788.97, cost:500.00, note:'Robinhood'},
+    {id:uid(),ticker:'NVDA',name:'Nvidia',         type:'stock',  value:602.32, cost:340.00, note:'Robinhood'},
+    {id:uid(),ticker:'TSLA',name:'Tesla',          type:'stock',  value:177.92, cost:82.72,  note:'Robinhood'},
+    {id:uid(),ticker:'AAPL',name:'Apple',          type:'stock',  value:119.93, cost:75.00,  note:'Robinhood'},
+    {id:uid(),ticker:'FUTU',name:'Futu Holdings',  type:'stock',  value:164.20, cost:90.47,  note:'Robinhood'},
+    {id:uid(),ticker:'V',   name:'Visa',           type:'stock',  value:79.25,  cost:67.71,  note:'Robinhood'},
+    {id:uid(),ticker:'PM',  name:'Philip Morris',  type:'stock',  value:42.01,  cost:25.00,  note:'Robinhood'},
+    {id:uid(),ticker:'BRK.B',name:'Berkshire B',   type:'stock',  value:17.65,  cost:15.00,  note:'Robinhood'},
+    {id:uid(),ticker:'DIA', name:'Dow Jones ETF',  type:'etf',    value:40.43,  cost:30.00,  note:'Robinhood'},
+    {id:uid(),ticker:'OXY', name:'Occidental',     type:'stock',  value:55.74,  cost:59.89,  note:'Robinhood'},
+    {id:uid(),ticker:'OUST',name:'Ouster',         type:'stock',  value:49.18,  cost:25.40,  note:'Robinhood'},
+    {id:uid(),ticker:'TMC', name:'TMC Metals',     type:'stock',  value:93.60,  cost:109.80, note:'Robinhood'},
+    {id:uid(),ticker:'CRWV',name:'CoreWeave',      type:'stock',  value:3.56,   cost:2.97,   note:'Robinhood'},
+    {id:uid(),ticker:'RIVN',name:'Rivian',         type:'stock',  value:17.87,  cost:15.33,  note:'Robinhood'},
+    {id:uid(),ticker:'PSFE',name:'Paysafe',        type:'stock',  value:17.00,  cost:100.00, note:'Robinhood'},
+    {id:uid(),ticker:'BTC', name:'Bitcoin',        type:'crypto', value:2523.16,cost:1014.62,note:'Coinbase'},
+  ];
+  save();
+}
+
+function openAddHolding(){
+  holdingEditId=null;
+  document.getElementById('hm-title').textContent='Add Holding';
+  document.getElementById('hm-save-btn').textContent='+ Add Holding';
+  document.getElementById('h-ticker').value='';
+  document.getElementById('h-type').value='stock';
+  document.getElementById('h-value').value='';
+  document.getElementById('h-cost').value='';
+  document.getElementById('h-note').value='';
+  openModal('holding-modal');
+}
+function saveHolding(){
+  var ticker=document.getElementById('h-ticker').value.trim().toUpperCase();
+  var type=document.getElementById('h-type').value;
+  var value=parseFloat(document.getElementById('h-value').value)||0;
+  var cost=parseFloat(document.getElementById('h-cost').value)||0;
+  var note=document.getElementById('h-note').value.trim();
+  if(!ticker)return;
+  if(!D.holdings)D.holdings=[];
+  if(holdingEditId){
+    var h=D.holdings.find(function(h){return h.id===holdingEditId;});
+    if(h){h.ticker=ticker;h.type=type;h.value=value;h.cost=cost;h.note=note;}
+  }else{
+    D.holdings.push({id:uid(),ticker:ticker,name:ticker,type:type,value:value,cost:cost,note:note});
+  }
+  save();closeModal('holding-modal');renderPortfolio();
+  toast('Holding saved ✓','#3b82f6');
+}
+function openUpdateHolding(id){
+  holdingUpdateId=id;
+  var h=D.holdings.find(function(h){return h.id===id;});
+  if(!h)return;
+  document.getElementById('hum-title').textContent='Update '+h.ticker;
+  document.getElementById('hu-value').value=h.value||'';
+  openModal('holding-update-modal');
+}
+function updateHoldingValue(){
+  var val=parseFloat(document.getElementById('hu-value').value)||0;
+  var h=D.holdings.find(function(h){return h.id===holdingUpdateId;});
+  if(h){h.value=val;h.updated=today();}
+  save();closeModal('holding-update-modal');renderPortfolio();
+  toast('Updated ✓');
+}
+function delHolding(id){
+  D.holdings=D.holdings.filter(function(h){return h.id!==id;});
+  save();renderPortfolio();toast('Removed');
+}
+
+// ── RENDER PORTFOLIO ──────────────────────────────────────────────────────────
+function renderPortfolio(){
+  var holdings=D.holdings||[];
+  var totalValue=holdings.reduce(function(s,h){return s+h.value;},0);
+  var totalCost=holdings.reduce(function(s,h){return s+h.cost;},0);
+  var totalGain=totalValue-totalCost;
+  var totalGainPct=totalCost>0?((totalGain/totalCost)*100):0;
+
+  // Group by type
+  var byType={stock:[],etf:[],crypto:[],other:[]};
+  holdings.forEach(function(h){if(byType[h.type])byType[h.type].push(h);else byType['other'].push(h);});
+  var typeValues={};
+  Object.keys(byType).forEach(function(t){typeValues[t]=byType[t].reduce(function(s,h){return s+h.value;},0);});
+
+  // Winners and losers
+  var sorted=[].concat(holdings).sort(function(a,b){
+    var pa=(a.value-a.cost)/(a.cost||1),pb=(b.value-b.cost)/(b.cost||1);return pb-pa;});
+  var winners=sorted.filter(function(h){return h.value>h.cost;}).slice(0,3);
+  var losers=sorted.filter(function(h){return h.value<=h.cost;}).slice(-3).reverse();
+
+  // Allocation donut segments (simplified as bars)
+  var typeOrder=['etf','stock','crypto','other'];
+  var allocBars=typeOrder.map(function(t){
+    var v=typeValues[t]||0;
+    var p=totalValue>0?((v/totalValue)*100):0;
+    return {type:t,value:v,pct:p,color:HOLDING_COLORS[t],icon:HOLDING_ICONS[t]};
+  }).filter(function(x){return x.value>0;});
+
+  // Build holdings rows
+  function holdingRow(h){
+    var gain=h.value-h.cost;
+    var gainPct=h.cost>0?((gain/h.cost)*100):0;
+    var allocPct=totalValue>0?((h.value/totalValue)*100):0;
+    var isUp=gain>=0;
+    return '<div class="row">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex:1">'
+      +'<div style="width:38px;height:38px;border-radius:10px;background:'+HOLDING_COLORS[h.type]+'18;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:'+HOLDING_COLORS[h.type]+'">'+h.ticker.slice(0,4)+'</div>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:14px;font-weight:600">'+h.ticker+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+allocPct.toFixed(1)+'% of portfolio'+(h.note?' · '+h.note:'')+'</div>'
+      +'<div class="pbar pbar-thin" style="margin-top:4px;margin-bottom:0"><div class="pf" style="width:'+Math.min(100,allocPct*3)+'%;background:'+HOLDING_COLORS[h.type]+'"></div></div>'
+      +'</div></div>'
+      +'<div style="text-align:right;flex-shrink:0;margin-left:10px">'
+      +'<div style="font-size:14px;font-weight:700">$'+fmt(h.value,0)+'</div>'
+      +'<div style="font-size:11px;color:'+(isUp?'var(--mint)':'var(--red)')+'">'+( isUp?'+':'')+fmt(gainPct,1)+'%</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px">'
+      +'<button class="btn-sm" onclick="openUpdateHolding('+h.id+')" style="padding:4px 8px;font-size:10px">↑</button>'
+      +'<button class="btn-del" onclick="delHolding('+h.id+')" style="font-size:16px;padding:2px 6px">×</button>'
+      +'</div>'
+      +'</div>';
+  }
+
+  var el=document.getElementById('screen-portfolio');
+  el.innerHTML='<div style="padding-top:14px">'
+
+    // Hero
+    +'<div class="card-hero">'
+    +'<span style="font-size:12px;color:rgba(255,255,255,.75);font-weight:600;letter-spacing:.06em;display:block;margin-bottom:4px">TOTAL PORTFOLIO VALUE</span>'
+    +'<div class="display" style="font-size:48px;color:#fff;margin-bottom:4px">$'+fmt(totalValue,0)+'</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center">'
+    +'<div style="font-size:13px;color:rgba(255,255,255,.8)">Cost basis: $'+fmt(totalCost,0)+'</div>'
+    +'<div style="font-size:14px;font-weight:700;color:'+(totalGain>=0?'#fff':'#ffaaaa')+'">'+(totalGain>=0?'+':'')+fmt(totalGainPct,1)+'%</div>'
+    +'</div>'
+    +'<div style="font-size:14px;color:rgba(255,255,255,.9);margin-top:2px">'+(totalGain>=0?'+':'')+' $'+fmt(Math.abs(totalGain),0)+' total gain</div>'
+
+    // Allocation mini bars
+    +'<div style="margin-top:14px">'
+    +'<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">ALLOCATION</div>'
+    +'<div style="display:flex;height:8px;border-radius:8px;overflow:hidden;gap:2px">'
+    +allocBars.map(function(a){return '<div style="width:'+a.pct+'%;background:rgba(255,255,255,'+(a.type==='etf'?'.9':a.type==='stock'?'.65':a.type==='crypto'?'.45':'.3')+');border-radius:4px"></div>';}).join('')
+    +'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">'
+    +allocBars.map(function(a){return '<div style="font-size:11px;color:rgba(255,255,255,.75)">'+a.icon+' '+a.type.charAt(0).toUpperCase()+a.type.slice(1)+' '+a.pct.toFixed(0)+'%</div>';}).join('')
+    +'</div></div></div>'
+
+    // Winners
+    +(winners.length>0?
+      '<div class="card"><div class="section-title">Top Performers</div>'
+      +winners.map(function(h){var g=(h.value-h.cost)/(h.cost||1)*100;return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px"><div style="width:32px;height:32px;border-radius:8px;background:var(--mint-dim);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--mint)">'+h.ticker.slice(0,4)+'</div><div style="font-size:13px;font-weight:600">'+h.ticker+'</div></div><div style="font-size:13px;font-weight:700;color:var(--mint)">+'+fmt(g,1)+'% · $'+fmt(h.value,0)+'</div></div>';}).join('')
+      +'</div>'
+    :'')
+
+    // Losers  
+    +(losers.length>0?
+      '<div class="card"><div class="section-title">Needs Attention</div>'
+      +losers.map(function(h){var g=(h.value-h.cost)/(h.cost||1)*100;return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px"><div style="width:32px;height:32px;border-radius:8px;background:var(--red-dim);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--red)">'+h.ticker.slice(0,4)+'</div><div><div style="font-size:13px;font-weight:600">'+h.ticker+'</div><div style="font-size:11px;color:var(--text3)">'+h.note+'</div></div></div><div style="text-align:right"><div style="font-size:13px;font-weight:700;color:var(--red)">'+fmt(g,1)+'%</div><div style="font-size:11px;color:var(--text3)">$'+fmt(h.value,0)+' value</div></div></div>';}).join('')
+      +'</div>'
+    :'')
+
+    // Full list
+    +'<div class="section-title" style="margin-top:4px">All Holdings</div>'
+    +'<div class="card">'
+    +holdings.sort(function(a,b){return b.value-a.value;}).map(holdingRow).join('')
+    +'</div>'
+    +'<button class="btn-primary" onclick="openAddHolding()">+ Add Holding</button>'
+    +'</div>';
+}
+
+// ── FINANCIAL HEALTH ──────────────────────────────────────────────────────────
+function getHealthData(){
+  var monthlyInc=(D.weekly||1500)*4.33;
+  var rentAmt=D.rent||0;
+  var bills=(D.bills||[]).reduce(function(s,b){return s+toMo(b.amt,b.freq);},0);
+  var ccBudget=(D.ccBudget||1000)*2; // monthly
+  var totalFixed=rentAmt+bills+ccBudget;
+  var freeMonthly=monthlyInc-totalFixed;
+
+  // Accounts
+  var checking=(D.accounts||[]).filter(function(a){return a.type==='checking';}).reduce(function(s,a){return s+a.bal;},0);
+  var savings=(D.accounts||[]).filter(function(a){return a.type==='savings';}).reduce(function(s,a){return s+a.bal;},0);
+  var investments=(D.accounts||[]).filter(function(a){return a.type==='investment';}).reduce(function(s,a){return s+a.bal;},0);
+  var totalLiquid=checking+savings;
+
+  // Portfolio
+  var portfolioValue=(D.holdings||[]).reduce(function(s,h){return s+h.value;},0);
+
+  // Emergency fund target (4 months expenses)
+  var monthlyExpenses=rentAmt+bills+(D.ccBudget||1000);
+  var efTarget=monthlyExpenses*4;
+  var efPct=pct(savings,efTarget);
+
+  // Checking health — should have 1-2 months fixed
+  var checkingTarget=totalFixed*1.5;
+  var checkingStatus=checking>=totalFixed&&checking<=totalFixed*2?'good':checking<totalFixed?'low':'high';
+
+  // Debt ratio
+  var debts=(D.accounts||[]).filter(function(a){return a.type==='debt';}).reduce(function(s,a){return s+a.bal;},0)+(D.ccBalance||0);
+  var debtToIncome=debts/monthlyInc;
+
+  // Savings rate
+  var savingsRate=freeMonthly/monthlyInc;
+
+  return{
+    monthlyInc:monthlyInc,rentAmt:rentAmt,bills:bills,ccBudget:ccBudget,
+    totalFixed:totalFixed,freeMonthly:freeMonthly,
+    checking:checking,savings:savings,investments:investments,
+    totalLiquid:totalLiquid,portfolioValue:portfolioValue,
+    monthlyExpenses:monthlyExpenses,efTarget:efTarget,efPct:efPct,
+    checkingTarget:checkingTarget,checkingStatus:checkingStatus,
+    debts:debts,debtToIncome:debtToIncome,savingsRate:savingsRate
+  };
+}
+
+function renderHealth(){
+  var h=getHealthData();
+  var goals=D.goals||[];
+  var efGoal=goals.find(function(g){return g.name.toLowerCase().indexOf('emergency')>=0||g.name.toLowerCase().indexOf('fund')>=0;});
+
+  // Build action steps with status
+  var steps=[
+    {
+      num:1,
+      title:'Build Emergency Fund',
+      desc:'Save 4 months of expenses ($'+fmt(h.efTarget,0)+') in a High-Yield Savings Account',
+      why:'Your first financial safety net. If you lose income, you can cover rent and bills without debt.',
+      status:h.savings>=h.efTarget?'done':h.savings>=h.efTarget*0.25?'progress':'todo',
+      progress:h.efPct,
+      action:h.savings>=h.efTarget?'Complete! ✓':'Save $'+fmt(h.efTarget-h.savings,0)+' more — open Ally or Marcus HYSA (4.5% APY)',
+      current:'You have $'+fmt(h.savings,0)+' saved of $'+fmt(h.efTarget,0)+' target'
+    },
+    {
+      num:2,
+      title:'Optimize Your Checking Balance',
+      desc:'Keep $'+fmt(h.checkingTarget,0)+' in checking (1.5× monthly bills). Move excess to HYSA.',
+      why:'Money sitting in a regular checking account earns near 0%. A HYSA earns 4–4.5%.',
+      status:h.checkingStatus==='good'?'done':h.checking===0?'todo':'progress',
+      progress:h.checking>0?pct(h.checking,h.checkingTarget):0,
+      action:h.checking>h.checkingTarget?'Move $'+fmt(h.checking-h.checkingTarget,0)+' to your HYSA':h.checking<h.totalFixed?'Your checking balance may be too low':'Looking good',
+      current:'You have $'+fmt(h.checking,0)+' in checking · Target: $'+fmt(h.checkingTarget,0)
+    },
+    {
+      num:3,
+      title:'Open a Roth IRA',
+      desc:'Contribute up to $7,000/year. Invest in SPY/VOO inside it. Grows tax-free forever.',
+      why:'At your age and income, this is the single best investment account available. Every dollar grows and is withdrawn tax-free at retirement.',
+      status:'todo',
+      progress:0,
+      action:'Open at Fidelity.com or Vanguard.com — takes 10 minutes. Contribute what you can.',
+      current:'Not yet started — this should be priority once emergency fund is built'
+    },
+    {
+      num:4,
+      title:'Keep investing regularly',
+      desc:'Put 80% of new investment money into SPY or VOO. Use 20% for individual stock picks.',
+      why:'Index funds beat most active investors over time. SPY already makes up '+pct((D.holdings||[]).filter(function(h){return h.ticker==='SPY';}).reduce(function(s,h){return s+h.value;},0),(D.holdings||[]).reduce(function(s,h){return s+h.value;},0)).toFixed(0)+'% of your Robinhood portfolio which is great.',
+      status:'progress',
+      progress:65,
+      action:'Continue adding to SPY/VOO each paycheck. Consider trimming PSFE (down 83%, unlikely to recover).',
+      current:'Portfolio value: $'+fmt(h.portfolioValue,0)+' across stocks, ETFs & crypto'
+    },
+    {
+      num:5,
+      title:'Grow income or reduce fixed costs',
+      desc:'Your spending commitment is '+Math.round(pct(h.totalFixed,h.monthlyInc))+'% of income. Ideal is under 60%.',
+      why:'The more of your income that is free, the faster you build wealth. Either earn more or lock in lower fixed costs.',
+      status:pct(h.totalFixed,h.monthlyInc)<60?'good':'progress',
+      progress:100-pct(h.totalFixed,h.monthlyInc),
+      action:pct(h.totalFixed,h.monthlyInc)<60?'You are doing well here - keep it up':'Look for ways to reduce bills or increase income',
+      current:'$'+fmt(h.freeMonthly,0)+'/mo free after all fixed costs'
+    }
+  ];
+
+  function statusColor(s){return s==='done'?'var(--mint)':s==='progress'?'var(--amber)':'var(--text3)';}
+  function statusBg(s){return s==='done'?'var(--mint-dim)':s==='progress'?'var(--amber-dim)':'var(--bg3)';}
+  function statusLabel(s){return s==='done'?'✓ Done':s==='progress'?'In progress':'Not started';}
+
+  var el=document.getElementById('screen-health');
+  el.innerHTML='<div style="padding-top:14px">'
+
+    // Overall score card
+    +'<div class="card" style="background:linear-gradient(135deg,#f0fdf9,#fff);border-color:rgba(0,200,150,.2);margin-bottom:14px">'
+    +'<span class="lbl">Financial Health Score</span>'
+    +'<div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:12px">'
+    +'<div class="display" style="font-size:52px;color:var(--mint)">'
+    +Math.round(steps.reduce(function(s,st){return s+(st.status==='done'?20:st.status==='progress'?10:0);},0))
+    +'<span style="font-size:20px;color:var(--text3)">/100</span></div>'
+    +'<div style="padding-bottom:8px">'
+    +'<div style="font-size:13px;font-weight:600;color:var(--text2)">Building Strong Foundations</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-top:2px">Complete the steps below to improve</div>'
+    +'</div></div>'
+    // Score bar
+    +'<div style="display:flex;gap:3px">'
+    +steps.map(function(st){return '<div style="flex:1;height:6px;border-radius:4px;background:'+(st.status==='done'?'var(--mint)':st.status==='progress'?'var(--amber)':'var(--bg4)')+'"></div>';}).join('')
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--text3);margin-top:5px">'+steps.filter(function(s){return s.status==='done';}).length+' of '+steps.length+' milestones complete</div>'
+    +'</div>'
+
+    // Monthly snapshot
+    +'<div class="card" style="margin-bottom:14px">'
+    +'<div class="section-title">Monthly Snapshot</div>'
+    +'<div class="stat-grid-3">'
+    +[['Income','$'+fmt(h.monthlyInc,0),'var(--mint)'],['Fixed out','$'+fmt(h.totalFixed,0),'var(--amber)'],['Free','$'+fmt(h.freeMonthly,0),h.freeMonthly>=0?'var(--mint)':'var(--red)']].map(function(x){return '<div class="stat-box"><div style="font-size:9px;color:'+x[2]+';font-weight:600;opacity:.8;letter-spacing:.08em;margin-bottom:4px">'+x[0]+'</div><div style="font-size:15px;font-weight:700">'+x[1]+'</div></div>';}).join('')
+    +'</div></div>'
+
+    // Action steps
+    +'<div class="section-title">Your Action Plan</div>'
+    +steps.map(function(st,i){
+      var isNext=st.status!=='done'&&steps.slice(0,i).every(function(s){return s.status==='done'||s.status==='progress';});
+      return '<div class="card" style="border-color:'+(isNext?'var(--mint)':'var(--border)')+';">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
+        +'<div style="display:flex;align-items:center;gap:10px;flex:1">'
+        +'<div style="width:32px;height:32px;border-radius:50%;background:'+statusBg(st.status)+';display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:'+statusColor(st.status)+';flex-shrink:0">'+st.num+'</div>'
+        +'<div style="flex:1"><div style="font-size:15px;font-weight:700">'+st.title+'</div>'
+        +'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+st.current+'</div></div></div>'
+        +'<span class="chip" style="background:'+statusBg(st.status)+';color:'+statusColor(st.status)+';border:none;flex-shrink:0;margin-left:8px">'+statusLabel(st.status)+'</span>'
+        +'</div>'
+        +(st.progress>0?'<div class="pbar" style="margin-bottom:10px"><div class="pf" style="width:'+st.progress+'%;background:'+statusColor(st.status)+'"></div></div>':'')
+        +'<div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:8px">'+st.desc+'</div>'
+        +'<div style="background:var(--bg3);border-radius:10px;padding:10px 12px">'
+        +'<div style="font-size:10px;color:var(--text3);font-weight:600;letter-spacing:.06em;margin-bottom:3px">WHY THIS MATTERS</div>'
+        +'<div style="font-size:12px;color:var(--text2)">'+st.why+'</div></div>'
+        +(st.status!=='done'?'<div style="background:var(--mint-soft);border-radius:10px;padding:10px 12px;margin-top:8px">'
+        +'<div style="font-size:10px;color:var(--mint2);font-weight:600;letter-spacing:.06em;margin-bottom:3px">NEXT ACTION</div>'
+        +'<div style="font-size:12px;color:var(--text);font-weight:500">'+st.action+'</div></div>':'')
+        +'</div>';
+    }).join('')
+
+    // Quick wins
+    +'<div class="card" style="margin-top:4px;border-color:var(--amber-dim)">'
+    +'<div class="section-title" style="color:var(--amber)">⚡ Quick Wins Right Now</div>'
+    +'<div style="display:flex;flex-direction:column;gap:10px">'
+    +[
+      {t:'Open a HYSA today',d:'Marcus.com or Ally.com — takes 10 min, earns 4.5% vs ~0% in regular savings'},
+      {t:'Cut PSFE position',d:'Down 83%, recovery unlikely. Free up $17 and the mental overhead.'},
+      {t:'Set up $50–100/paycheck auto-invest',d:'Into SPY on Robinhood. Small consistent amounts compound significantly.'},
+      {t:'Check if CRWV position is worth adding to',d:'CoreWeave just signed deals with Anthropic and Meta. Analysts price target ~$122. Your $4 position is tiny — if you believe in AI infrastructure, this is worth more.'},
+    ].map(function(w){return '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><div style="color:var(--amber);font-size:16px;flex-shrink:0">→</div><div><div style="font-size:13px;font-weight:600">'+w.t+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+w.d+'</div></div></div>';}).join('')
+    +'</div></div>'
+    +'</div>';
+}
+
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 D=load();
 // Seed historical payoff data if this is a fresh install
@@ -893,6 +1302,8 @@ var lk=document.createElement('link');lk.rel='manifest';lk.href=URL.createObject
 document.head.appendChild(lk);
 document.getElementById('setup-btn').onclick=openSetup;
 setupHeader();
+seedAccounts();
+seedPortfolio();
 renderHome();
 // First time open setup
 if(D.weekly===1500&&!D.ccLastUpdated&&!(D.payoffs&&D.payoffs.length)){
